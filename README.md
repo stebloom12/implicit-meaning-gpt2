@@ -46,9 +46,24 @@ Part III: When the model "explains" its understanding, is the explanation real?
 **Key Findings.**
 
 - **Pragmatic divergence emerges in layers 5–8.** Early layers (0–4) treat both sentence types identically. Starting at layer 5, literal questions shift toward Yes/No response tokens while implicit requests do not — they produce tokens consistent with action or compliance ("Sure", "Please").
+
+![Logit Lens Heatmap](figures/logit_lens_heatmap.png)
+
+- **Probe tokens reveal distinct response pathways.** Tracking P("Yes"), P("Sure"), P("No") across layers shows that literal questions activate a Yes/No pathway while implicit requests do not — consistent with how humans respond to indirect requests (with action, not with "Yes").
+
+![Probe Token Probabilities](figures/probe_tokens.png)
+
 - **Attention patterns reflect pragmatic intent.** At layer 9, the final token ("?") in implicit requests attends primarily to the *action verb* and *object* (what is being requested). In literal questions, it attends more to *"you"* (whose ability is being queried).
+
+![Attention Difference](figures/attention_difference.png)
+
 - **Representations diverge then reconverge.** Cosine similarity between implicit and literal residual streams drops from ~0.99 (layer 0) to ~0.88 (layers 6–8), then recovers as both converge on formatting tokens in the final layers. This U-shaped pattern is consistent across all sentence pairs.
+
+![Cosine Similarity](figures/cosine_similarity.png)
+
 - **Layer 5 is a causal bottleneck.** Activation patching produces the largest behavioral shift when applied at layer 5, confirming it as the critical transition point for the implicit/literal distinction.
+
+![Activation Patching](figures/activation_patching.png)
 
 **Limitations.** Small model (124M), small dataset (6 pairs), potential lexical confounds between sentence pairs, mean attention averaging dilutes head-specific effects.
 
