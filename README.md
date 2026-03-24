@@ -4,6 +4,15 @@
 
 Sole author. Built with [TransformerLens](https://github.com/neelnanda-io/TransformerLens).
 
+<!-- Interactive 3D visualization: open trilogy_viz.html in a browser -->
+<p align="center">
+  <a href="trilogy_viz.html">
+    <img src="figures/trilogy_viz_preview.png" alt="Interactive 3D Visualization" width="700"/>
+  </a>
+  <br/>
+  <em>↑ Open <code>trilogy_viz.html</code> for the interactive 3D demo</em>
+</p>
+
 ---
 
 ## The Question
@@ -15,11 +24,17 @@ This repository investigates these questions through three connected studies, ea
 ```
 Part I:   Does the model distinguish implicit from literal meaning?
             → Yes. Layers 5–8 (GPT-2), layers 9/20 (BLOOM).
+
 Part II:  Does this still work when the input mixes multiple languages?
             → Half yes, half no. The "ability question" detector is language-agnostic.
               The "request intent" detector shifts rightward under code-switching.
+
 Part III: When the model "explains" its understanding, is the explanation real?
-            → [Planned]
+            → Partially. The implicit sentence's CoT is FAITHFUL (causally changes the
+              answer). The literal sentence shows SELF-REPAIR (bottleneck detects the
+              corruption, but downstream layers compensate). Zero shortcut circuits found
+              — unlike arithmetic tasks, the model doesn't need to bypass the reasoning
+              chain for a task it can genuinely perform.
 ```
 
 ---
@@ -50,22 +65,19 @@ Part III: When the model "explains" its understanding, is the explanation real?
 
 ![Logit Lens Heatmap](figures/logit_lens_heatmap.png)
 
-- **Probe tokens reveal distinct response pathways.** Tracking P("Yes"), P("Sure"), P("No") across layers shows that literal questions activate a Yes/No pathway while implicit requests do not — consistent with how humans respond to indirect requests (with action, not with "Yes").
-- **Attention patterns reflect pragmatic intent.** At layer 9, the final token ("?") in implicit requests attends primarily to the *action verb* and *object* (what is being requested). In literal questions, it attends more to *"you"* (whose ability is being queried).
-- **Representations diverge then reconverge.** Cosine similarity between implicit and literal residual streams drops from ~0.99 (layer 0) to ~0.88 (layers 6–8), then recovers as both converge on formatting tokens in the final layers. This U-shaped pattern is consistent across all sentence pairs.
 - **Layer 5 is a causal bottleneck.** Activation patching produces the largest behavioral shift when applied at layer 5, confirming it as the critical transition point for the implicit/literal distinction.
 
 ![Activation Patching](figures/activation_patching.png)
 
-**BLOOM-560m Replication.** To prepare for Part II (which requires a multilingual model), we replicated the core experiments on BLOOM-560m (24 layers). Key differences from GPT-2:
+- **Representations diverge then reconverge.** Cosine similarity between implicit and literal residual streams drops from ~0.99 (layer 0) to ~0.88 (layers 6–8), then recovers. This U-shaped pattern is consistent across all sentence pairs.
+
+**BLOOM-560m Replication.** Key differences from GPT-2:
 
 | | GPT-2 Small | BLOOM-560m |
 |---|---|---|
 | **Bottleneck** | Single: L5 | Asymmetric: **L9** (request intent) / **L20** (ability intent) |
 | **Cosine dip** | L6–L8 (narrow) | L6–L19 (wide, minimum at L14) |
 | **Pattern** | Localized | Two-stage: different intents encoded at different layers |
-
-The cumulative KL patching curve initially appeared as a monotonic ramp (a "closing effect"). Per-layer ΔKL analysis resolved this, revealing true bottleneck layers. See `experiment_bloom_baseline.ipynb`.
 
 **Limitations.** Small model (124M/560M), small dataset (6 pairs), potential lexical confounds between sentence pairs, mean attention averaging dilutes head-specific effects.
 
@@ -75,9 +87,9 @@ The cumulative KL patching curve initially appeared as a monotonic ramp (a "clos
 
 **Status: Complete** · `experiment_multilingual.ipynb`
 
-**Motivation.** Part I establishes that layers 5–8 (GPT-2) / L9+L20 (BLOOM) handle pragmatic processing in English. But more than half the world's population is multilingual. What happens when the input mixes languages within a single sentence — a phenomenon called *code-switching*?
+**Motivation.** Part I establishes that layers 5–8 (GPT-2) / L9+L20 (BLOOM) handle pragmatic processing in English. What happens when the input mixes languages within a single sentence?
 
-**Setup.** The same implicit/literal sentence pair, expressed at five levels of language mixing on BLOOM-560m:
+**Setup.** The same implicit/literal sentence pair at five levels of language mixing on BLOOM-560m:
 
 | Level | Example (implicit) | Languages |
 |---|---|---|
@@ -87,90 +99,93 @@ The cumulative KL patching curve initially appeared as a monotonic ramp (a "clos
 | 4 | *你能 pass the しお给我吗?* | Chinese + English + Japanese |
 | 5 | *侬帮我 pass the salt 好伐?* | Shanghainese + English |
 
-**Method.** Six experiments:
-
-1. **Multilingual logit lens** — language classification of top-5 predicted tokens per layer
-2. **Cross-lingual cosine similarity** — do same-meaning, different-language sentences converge?
-3. **Last-token attention patterns** — what does the model attend to when making its output decision?
-4. **Activation patching with per-layer ΔKL** — the core causal test: does the pragmatic bottleneck shift under code-switching?
-5. **Pragmatic discrimination (JSD)** — can the model still tell implicit from literal?
-6. **Tokenization analysis** — how does the tokenizer handle each level?
-
 **Key Findings.**
 
-- **The pragmatic circuit is half language-agnostic, half language-dependent.** The "ability question" detector (Impl→Lit ΔKL peak) stays near **L20** regardless of input language. But the "request intent" detector (Lit→Impl ΔKL peak) shifts rightward with language complexity:
+- **The pragmatic circuit is half language-agnostic, half language-dependent.** The "ability question" detector stays near **L20** regardless of input language. But the "request intent" detector shifts rightward with language complexity:
 
 | Level | Request intent peak | Ability intent peak | Shift |
 |-------|-------------------|---------------------|-------|
 | L1_EN (baseline) | **L9** | **L20** | — |
 | L2_ZH | L14 | L14 | +5 |
 | L3_ZH_EN | L20 | L20 | +11 |
-| L4_ZH_EN_JA | L20 | L21 | +11 |
 | L5_SH_EN | L21 | L20 | +12 |
-
-The model spends its early/mid layers resolving language ambiguity before it can write pragmatic intent into the residual stream. More language mixing = more layers consumed by language processing = later pragmatic bottleneck.
 
 ![Exp 4b ΔKL](figures/multilingual/exp4b_delta_kl_lit_to_impl.png)
 
-- **Attention strategy: Chinese frame, English content.** In code-switched inputs, the last token primarily attends to Chinese frame tokens ("你能", "给我", "吗?") while English content words ("pass", "the", "salt") receive minimal attention. The Chinese grammatical frame drives pragmatic interpretation; English content words provide semantic specifics.
+- **Multilingual input increases pragmatic discrimination.** Counterintuitively, the model distinguishes implicit from literal *better* in Chinese and code-switched inputs (JSD=0.095) than in pure English (JSD=0.021), because English sentence pairs share more tokens, creating distribution overlap.
 
-![Exp 3 Attention](figures/multilingual/exp3_attention.png)
-
-- **Multilingual input increases pragmatic discrimination.** Counterintuitively, the model distinguishes implicit from literal *better* in Chinese and code-switched inputs than in pure English:
-
-| Level | JSD | Pattern |
-|-------|-----|---------|
-| L1_EN | 0.021 | Lowest — English pairs share 3/6 tokens ("Can", "you", "?"), creating high distribution overlap |
-| L2_ZH | 0.076 | Higher — Chinese verbs/objects use entirely different characters |
-| L3_ZH_EN | **0.095** | Highest — Chinese frame diversity + English content semantic gap |
-| L4_ZH_EN_JA | 0.047 | Medium — Japanese substitution reduces content word divergence |
-| L5_SH_EN | 0.054 | Medium — unknown Shanghainese tokens add noise |
-
-The key driver is **token-level overlap between sentence pairs**: English "Can you pass the salt?" and "Can you lift this rock?" share a prefix and suffix, creating distribution overlap that lowers JSD. Chinese pairs use entirely different characters for verbs and objects, so output distributions diverge more. L3 (code-switch) combines diverse Chinese framing with semantically distinct English content, maximizing discrimination.
-
-- **Cross-lingual representations diverge sharply at L19-20.** Cosine similarity between same-meaning, different-language sentences drops to 0.65 for L1_EN vs L4_ZH_EN_JA — then partially reconverges in the final layers.
-
-- **Shanghainese tokenization failure.** BLOOM fragments "侬" (nong, Shanghainese "you") into unknown tokens (◆◆), while standard Chinese characters tokenize cleanly. This directly correlates with the delayed pragmatic bottleneck for L5.
-
-- **Output language bias.** BLOOM resolves toward English predictions in final layers regardless of input language. Chinese proportion in logit lens drops at L22-23 — not because of a language switch, but because formatting tokens (quotes, EOS) dominate the final layers.
-
-**Methodology Notes.**
-
-- **Probe-token metrics are misleading for multilingual models.** Initial experiments using 5 English response tokens ("Sure", "Yes", etc.) showed a monotonic ramp — a "closing effect" from patching later layers. Switching to full-distribution KL divergence and per-layer ΔKL analysis resolved this, revealing true bottleneck structure. The same issue affected the degradation curve (Exp 5), where English probe tokens measured "does the model respond in English?" rather than "can the model distinguish intent?" JSD over the full distribution fixed this.
-
-- **Punctuation matters.** Full-width Chinese question mark (？, U+FF1F) and half-width (?, U+003F) produce different tokenizations and measurably different output distributions. All experiments use half-width `?` for consistency.
-
-- **JA proportion = 0 even with hiragana.** Even unambiguous Japanese tokens (しお) in the input never triggered Japanese-language predictions. Minority language tokens are "absorbed" into the dominant language processing pathway.
-
-**Limitations.** Single model (BLOOM-560m), single sentence pair per level, mean attention averaging, JSD measures distribution distance rather than pragmatic comprehension per se, BLOOM baseline differs from GPT-2 making cross-model comparisons approximate.
+**Limitations.** Single model (BLOOM-560m), single sentence pair per level, mean attention averaging, JSD measures distribution distance rather than pragmatic comprehension per se.
 
 ---
 
-## Part III — Grounded Chain-of-Thought
+## Part III — Grounded Chain-of-Thought Faithfulness
 
-**Status: Planned** · `experiment_cot_faithfulness.ipynb`
+**Status: Complete** · `experiment_cot_faithfulness.ipynb`
 
-**Motivation.** Part I shows that the model processes pragmatic meaning at specific layers. But when a model generates a chain-of-thought explanation of *how* it interpreted a sentence, does that explanation actually reflect what happened in those layers? Or is the model constructing a plausible-sounding narrative after the fact?
+**Motivation.** Parts I and II show *where* pragmatic processing happens. Part III asks: when a model generates a chain-of-thought explanation of *how* it understood a sentence, does that explanation reflect what actually happened at those layers?
 
-This is a central question for AI safety: if chain-of-thought reasoning is unfaithful — if the stated reasoning doesn't match the internal computation — then CoT-based monitoring and oversight may be unreliable.
+**Setup.** Four conditions per sentence, with length-controlled baselines:
 
-**Setup.** Three experimental conditions for each sentence:
-
-| Condition | Prompt |
+| Condition | Example (implicit) |
 |---|---|
-| **No-CoT** | *Can you pass the salt?* |
-| **CoT** | *Can you pass the salt? Let me think about what this really means step by step.* |
-| **Corrupted CoT** | *Can you pass the salt? Let me think step by step. This is a genuine question about physical ability.* |
+| **no_cot** | *Can you pass the salt?* |
+| **no_cot_padded** | *Can you pass the salt? I will now process this input token by token...* |
+| **cot** | *Can you pass the salt? Let me think step by step. This is an indirect request...* |
+| **corrupted** | *Can you pass the salt? Let me think step by step. This is a literal question about physical ability...* |
 
-The corrupted condition deliberately provides the *wrong* interpretation — giving implicit sentences a literal explanation and vice versa. This creates a causal test: if the model's final answer is unaffected by a corrupted reasoning chain, then the chain was not causally involved in producing the answer.
+The corrupted condition provides the *wrong* interpretation. If the model's output is unaffected, the chain was not causally involved — the CoT is decorative.
 
-**Research Questions.**
+**Key improvement over Ashioya (2026):** Ashioya studied CoT faithfulness for arithmetic on GPT-2, but GPT-2 cannot perform arithmetic (P(correct) ≈ 0.01%). Our pragmatic task has strong construct validity — Part I demonstrates genuine task competence.
 
-1. **Causal relevance.** Does CoT prompting change the activation patterns at the pragmatic bottleneck layers (L9/L20 in BLOOM) compared to no-CoT?
-2. **Shortcut circuits.** Are there attention heads that bypass the CoT reasoning entirely — producing the correct answer through a separate pathway regardless of what the chain says?
-3. **Mechanistic grounding.** Can we annotate each step of a CoT with a faithfulness score derived from logit lens analysis — creating a "grounded" chain-of-thought where each reasoning step is tagged as mechanistically supported or not?
+**Method.** Five experiments on GPT-2 Small:
 
-**Related Work.** This builds on recent investigations of CoT faithfulness, including Ashioya (2026) on mechanistic analysis of faithful vs. shortcut circuits in GPT-2, Chen et al. (2025) on SAE-based CoT feature analysis in Pythia, and Barez et al. (2025) on the theoretical limits of CoT as explanation. The contribution here is applying these methods to *pragmatic language understanding* rather than mathematical reasoning — a domain where faithfulness has not been studied.
+1. **CoT vs No-CoT logit lens** — does CoT change activations at the bottleneck?
+2. **Corrupted CoT causal test** ⭐ — does a wrong explanation change the final answer?
+3. **Cross-condition activation patching with ΔKL** — which layers encode the CoT difference?
+4. **Per-head activation patching** ⭐ — which attention heads are faithful vs shortcuts?
+5. **Grounded CoT prototype** — annotate each reasoning step with a faithfulness score
+
+**Key Findings.**
+
+- **CoT is partially faithful, with self-repair.**
+
+| Sentence | Top-1 (cot) | Top-1 (corrupted) | Answer Δ? | L5/L8 Δ? | Verdict |
+|---|---|---|---|---|---|
+| *Can you pass the salt?* | `\n` | `I` | **Yes** | Yes | **FAITHFUL** |
+| *Can you lift this rock?* | `I` | `I` | No | Yes | **SELF-REPAIR** |
+
+For the implicit sentence, corrupting the CoT changes the final answer — the chain is causally involved. For the literal sentence, the bottleneck detects corruption (cosine drops to 0.926) but downstream layers compensate.
+
+- **Self-repair is visible as a V-shaped cosine curve.** Cot vs corrupted cosine similarity drops from ~0.99 (L0) to 0.920 (L7), then recovers to ~0.99 (L11). The model detects corruption at the bottleneck but repairs downstream.
+
+![Exp 4 Cosine](figures/cot_faithfulness/exp4_cosine.png)
+
+- **CoT information is written at L9 — one layer past the bottleneck.** Per-layer ΔKL peaks at L9 for both sentences. L5–L8 *processes* the CoT; L9 is where the result is *written* to the residual stream.
+
+- **Zero shortcut circuits — unlike arithmetic.**
+
+| | Ashioya (arithmetic) | Ours (pragmatic) |
+|---|---|---|
+| Top faithful head | L0H1 (+0.54) | **L6H3** (+0.016) |
+| Shortcut heads | L7H6 (−0.33) | **None** (all ≥ 0) |
+| Faithful in bottleneck | N/A | 3/5 top heads in L5–L8 |
+
+GPT-2 cannot do arithmetic and must shortcut; it can do pragmatic understanding and doesn't need to. **CoT faithfulness correlates with genuine task competence.**
+
+![Exp 3b Heatmap](figures/cot_faithfulness/exp3b_perhead_heatmap.png)
+
+- **L6H3 is the "faithful head."** Present in top-5 for both sentence types, inside the Part I bottleneck. This is the primary channel through which CoT information enters the pragmatic circuit.
+
+- **Padding semantics leak into baseline.** "Leaky" padding ("what this really means") inflates KL by 7x vs neutral padding. Exps 2–3b (cot vs corrupted) are unaffected.
+
+**Mapping to Barez et al. (2025) framework:**
+
+| Dimension | Experiment | Result |
+|---|---|---|
+| **Causal Relevance** | Exp 2 (corrupted CoT) | 1/2 FAITHFUL, 1/2 SELF-REPAIR |
+| **Completeness** | Exp 3b (per-head patching) | No shortcut circuits → CoT pathway is complete |
+
+**Limitations.** Two sentences only. CoT is injected, not autoregressive. Cosine threshold (0.95) is arbitrary. Grounding classifier is keyword-based (proof of concept).
 
 ---
 
@@ -179,41 +194,28 @@ The corrupted condition deliberately provides the *wrong* interpretation — giv
 ```
 implicit-meaning-gpt2/
 ├── README.md
+├── trilogy_viz.html                    # Interactive 3D visualization
 ├── experiment.ipynb                    # Part I — GPT-2 (complete)
 ├── experiment_bloom_baseline.ipynb     # Part I — BLOOM replication (complete)
 ├── experiment_multilingual.ipynb       # Part II (complete)
-├── experiment_cot_faithfulness.ipynb   # Part III (planned)
+├── experiment_cot_faithfulness.ipynb   # Part III (complete)
 └── figures/
     ├── logit_lens_heatmap.png
-    ├── probe_tokens.png
-    ├── attention_difference.png
-    ├── cosine_similarity.png
     ├── activation_patching.png
     ├── bloom_baseline/
-    │   ├── logit_lens_probe.png
-    │   ├── cosine_similarity.png
-    │   ├── activation_patching_kl.png
-    │   └── activation_patching_delta_kl.png
-    └── multilingual/
-        ├── exp1_logit_lens_language.png
-        ├── exp2_cosine_similarity.png
-        ├── exp3_attention.png
-        ├── exp4a_cross_lingual.png
-        ├── exp4b_delta_kl_lit_to_impl.png
-        ├── exp4b_delta_kl_impl_to_lit.png
-        ├── exp5_jsd.png
-        └── exp6_tokenization.png
+    ├── multilingual/
+    └── cot_faithfulness/
 ```
 
 ## How the Parts Connect
 
-Each part addresses a limitation or open question from the previous one:
+The arc follows: **observation** → **robustness testing** → **trust verification**.
 
-- **Part I** finds that pragmatic processing localizes to layers 5–8 (GPT-2) / L9+L20 (BLOOM) → but only tested on English sentences with controlled structure.
-- **Part II** tests whether this circuit generalizes across languages and under distribution shift → finds an asymmetric result: one sub-circuit generalizes, the other doesn't. Also reveals that standard probe-token metrics are misleading for multilingual models.
-- **Part III** will use the same mechanistic tools to audit the model's chain-of-thought explanations → closing the loop between *what the model does* and *what the model says it does*.
+- **Part I** finds that pragmatic processing localizes to layers 5–8 (GPT-2) / L9+L20 (BLOOM).
+- **Part II** tests whether this circuit generalizes across languages — finds an asymmetric result.
+- **Part III** audits the model's chain-of-thought explanations — finds partial faithfulness with self-repair, zero shortcut circuits, and a "faithful head" (L6H3) inside the Part I bottleneck.
 
-The arc follows a natural progression: **observation** → **robustness testing** → **trust verification**.
+**Central finding: the same circuit that Part I identified for pragmatic processing is the circuit that Part III finds CoT information gets routed through. The model doesn't build a separate pathway for reasoning about its reasoning — it reuses its existing pragmatic machinery.**
 
 ## Tools & References
 
@@ -225,3 +227,4 @@ The arc follows a natural progression: **observation** → **robustness testing*
 - Barez et al. (2025). "Chain-of-Thought Is Not Explainability." Oxford AIGI.
 - Chen et al. (2025). "How Does Chain of Thought Think?" arXiv:2507.22928.
 - Ashioya (2026). "Mechanistic Analysis of Chain-of-Thought Faithfulness." BlueDot Impact.
+- Arcuschin et al. (2025). "Chain-of-Thought Unfaithfulness." ICLR Workshop.
