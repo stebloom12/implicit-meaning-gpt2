@@ -4,13 +4,13 @@
 
 Sole author. Built with [TransformerLens](https://github.com/neelnanda-io/TransformerLens).
 
-<!-- Interactive 3D visualization: open trilogy_viz.html in a browser -->
+<!-- Interactive 3D visualization hosted on GitHub Pages -->
 <p align="center">
-  <a href="trilogy_viz.html">
+  <a href="https://stebloom12.github.io/implicit-meaning-gpt2/trilogy_viz.html">
     <img src="figures/trilogy_viz_preview.png" alt="Interactive 3D Visualization" width="700"/>
   </a>
   <br/>
-  <em>↑ Open <code>trilogy_viz.html</code> for the interactive 3D demo</em>
+  <em>↑ Click to open the interactive 3D visualization</em>
 </p>
 
 ---

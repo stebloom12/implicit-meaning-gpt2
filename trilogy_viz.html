@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pragmatic Processing Trilogy</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Space+Grotesk:wght@300;400;600;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;color:#e0e0e8;font-family:'Space Grotesk',sans-serif;overflow:hidden;user-select:none}
+  canvas{display:block}
+  .top{position:fixed;top:0;left:0;right:0;z-index:20;padding:20px 28px;pointer-events:none}
+  .top h1{font-size:18px;font-weight:700;color:#fff;letter-spacing:-0.3px;text-shadow:0 0 40px rgba(80,120,255,0.3)}
+  .top .sub{font-size:11px;color:#667;font-family:'JetBrains Mono',monospace;margin-top:3px}
+  .tabs{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:20;display:flex;gap:4px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:4px;backdrop-filter:blur(12px)}
+  .tab{padding:8px 18px;border-radius:7px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:12px;color:#667;transition:all .25s;pointer-events:all}
+  .tab:hover{color:#aab}
+  .tab.on{background:rgba(100,140,255,0.15);color:#8ab4ff;font-weight:600}
+  .sentences{position:fixed;left:28px;top:50%;transform:translateY(-50%);z-index:15;pointer-events:none}
+  .sent{margin:12px 0;padding:10px 16px;border-left:3px solid;border-radius:0 8px 8px 0;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);max-width:300px}
+  .sent .label{font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+  .sent .text{font-size:13px;font-style:italic;line-height:1.4;color:#ccd}
+  .finding{position:fixed;right:28px;top:50%;transform:translateY(-50%);z-index:15;pointer-events:none;max-width:280px;text-align:right}
+  .finding .tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;letter-spacing:1px;margin-bottom:10px}
+  .finding .headline{font-size:20px;font-weight:700;color:#fff;line-height:1.3;margin-bottom:8px;text-shadow:0 0 30px rgba(100,140,255,0.2)}
+  .finding .detail{font-size:11.5px;color:#889;line-height:1.6;font-family:'JetBrains Mono',monospace}
+  .scroll-hint{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:15;font-size:11px;color:#334;font-family:'JetBrains Mono',monospace;animation:pulse 2s infinite;pointer-events:none}
+  @keyframes pulse{0%,100%{opacity:.2}50%{opacity:.7}}
+</style>
+</head>
+<body>
+<div class="top"><div><h1>How GPT-2 Understands What You Really Mean</h1><div class="sub">mechanistic interpretability trilogy · drag to orbit</div></div></div>
+<div class="tabs">
+  <div class="tab on" onclick="go(0)">I · Where</div>
+  <div class="tab" onclick="go(1)">II · Languages</div>
+  <div class="tab" onclick="go(2)">III · Trust</div>
+</div>
+<div class="sentences" id="sents"></div>
+<div class="finding" id="finding"></div>
+<div class="scroll-hint">scroll or click tabs ▸</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const NL=12, SP=3.2, X0=-(NL-1)*SP/2;
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x040410, 0.009);
+const cam=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);
+const ren=new THREE.WebGLRenderer({antialias:true});
+ren.setSize(innerWidth,innerHeight);
+ren.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.prepend(ren.domElement);
+
+scene.add(new THREE.AmbientLight(0x182040,0.6));
+const pt1=new THREE.PointLight(0x4488ff,1.5,80);pt1.position.set(-10,15,10);scene.add(pt1);
+const pt2=new THREE.PointLight(0xff6633,0.8,60);pt2.position.set(15,10,-10);scene.add(pt2);
+const pt3=new THREE.PointLight(0xffaa33,1.0,50);pt3.position.set(0,8,0);scene.add(pt3);
+
+const grid=new THREE.GridHelper(80,40,0x111125,0x0a0a18);grid.position.y=-7;scene.add(grid);
+
+const stC=1200,stG=new THREE.BufferGeometry(),stP=new Float32Array(stC*3);
+for(let i=0;i<stC;i++){stP[i*3]=(Math.random()-.5)*120;stP[i*3+1]=(Math.random()-.5)*80;stP[i*3+2]=(Math.random()-.5)*80}
+stG.setAttribute('position',new THREE.BufferAttribute(stP,3));
+scene.add(new THREE.Points(stG,new THREE.PointsMaterial({color:0x223355,size:0.06,transparent:true,opacity:0.5})));
+
+function makeLabel(text,color,fontSize,bgColor){
+  const c=document.createElement('canvas');c.width=256;c.height=80;
+  const ctx=c.getContext('2d');
+  if(bgColor){ctx.fillStyle=bgColor;ctx.beginPath();ctx.roundRect(8,8,240,64,8);ctx.fill()}
+  ctx.font=`bold ${fontSize||28}px JetBrains Mono, monospace`;
+  ctx.fillStyle=color||'#fff';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(text,128,42);
+  const tex=new THREE.CanvasTexture(c);
+  const mat=new THREE.SpriteMaterial({map:tex,transparent:true});
+  const s=new THREE.Sprite(mat);s.scale.set(4,1.2,1);return s;
+}
+
+function lx(i){return X0+i*SP}
+
+const slabs=[],slabMats=[],layerLabelSprites=[];
+const causalGroup=new THREE.Group();scene.add(causalGroup);
+const staticGroup=new THREE.Group();scene.add(staticGroup);
+
+for(let i=0;i<NL;i++){
+  const x=lx(i);
+  const g=new THREE.BoxGeometry(0.35,10,10);
+  const m=new THREE.MeshPhongMaterial({color:0x151528,transparent:true,opacity:0.15,shininess:20,emissive:0x080812,side:THREE.DoubleSide});
+  const slab=new THREE.Mesh(g,m);slab.position.set(x,0,0);staticGroup.add(slab);
+  slabs.push(slab);slabMats.push(m);
+  const lbl=makeLabel('L'+i,'#556688',32);lbl.position.set(x,-4.2,5.5);lbl.scale.set(2.5,0.8,1);staticGroup.add(lbl);
+  layerLabelSprites.push(lbl);
+  if(i<NL-1){
+    const ax=x+SP*0.5;
+    const shG=new THREE.CylinderGeometry(0.04,0.04,SP*0.5,8);
+    const shM=new THREE.MeshBasicMaterial({color:0x223344,transparent:true,opacity:0.3});
+    const sh=new THREE.Mesh(shG,shM);sh.position.set(ax,-5.5,0);sh.rotation.z=Math.PI/2;staticGroup.add(sh);
+    const hG=new THREE.ConeGeometry(0.15,0.4,8);
+    const hM=new THREE.MeshBasicMaterial({color:0x334466,transparent:true,opacity:0.4});
+    const hd=new THREE.Mesh(hG,hM);hd.position.set(x+SP*0.75,-5.5,0);hd.rotation.z=-Math.PI/2;staticGroup.add(hd);
+  }
+}
+
+function setBN(bnLayers){
+  slabMats.forEach((m,i)=>{m.color.set(0x151528);m.opacity=0.15;m.emissive.set(0x080812);m.shininess=20;layerLabelSprites[i].material.opacity=0.5});
+  while(causalGroup.children.length)causalGroup.remove(causalGroup.children[0]);
+  bnLayers.forEach(i=>{
+    slabMats[i].color.set(0x553300);slabMats[i].opacity=0.4;slabMats[i].emissive.set(0x331800);slabMats[i].shininess=80;
+    layerLabelSprites[i].material.opacity=1.0;
+    const x=lx(i);
+    const lbl=makeLabel('L'+i,'#ffaa33',34,'rgba(60,40,0,0.5)');lbl.position.set(x,-4.2,5.5);lbl.scale.set(2.8,0.9,1);causalGroup.add(lbl);
+    const eg=new THREE.EdgesGeometry(new THREE.BoxGeometry(0.35,10,10));
+    const em=new THREE.LineBasicMaterial({color:0xffaa33,transparent:true,opacity:0.5});
+    const el=new THREE.LineSegments(eg,em);el.position.set(x,0,0);causalGroup.add(el);
+    const sg=new THREE.SphereGeometry(0.2,16,16);
+    const sm=new THREE.MeshBasicMaterial({color:0xffaa33,transparent:true,opacity:0.7});
+    const ss=new THREE.Mesh(sg,sm);ss.position.set(x,5.8,0);causalGroup.add(ss);
+    const bg=new THREE.BoxGeometry(SP*0.9,0.15,10);
+    const bm=new THREE.MeshBasicMaterial({color:0xffaa33,transparent:true,opacity:0.12});
+    const bb=new THREE.Mesh(bg,bm);bb.position.set(x,-5.2,0);causalGroup.add(bb);
+  });
+  if(bnLayers.length>=2){
+    const x0=lx(bnLayers[0]),x1=lx(bnLayers[bnLayers.length-1]),cx=(x0+x1)/2;
+    const tag=makeLabel('▸ CAUSAL BOTTLENECK ◂','#ffcc44',22);tag.position.set(cx,6.5,0);tag.scale.set(6,1,1);causalGroup.add(tag);
+  }
+}
+
+let tubes=[];
+function makeArrowHead(pos,dir,color,size){
+  const s=size||0.25;const g=new THREE.ConeGeometry(s,s*2.5,8);
+  const m=new THREE.MeshPhongMaterial({color,emissive:color,emissiveIntensity:0.4,transparent:true,opacity:0.9});
+  const cone=new THREE.Mesh(g,m);cone.position.copy(pos);
+  const axis=new THREE.Vector3(0,1,0);
+  cone.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(axis,dir.clone().normalize()));
+  return cone;
+}
+
+function makeTube(pts,color,radius){
+  const curve=new THREE.CatmullRomCurve3(pts);
+  const tubeGeo=new THREE.TubeGeometry(curve,100,radius||0.13,8,false);
+  const tubeMat=new THREE.MeshPhongMaterial({color,emissive:color,emissiveIntensity:0.3,transparent:true,opacity:0.8,shininess:100});
+  const tube=new THREE.Mesh(tubeGeo,tubeMat);scene.add(tube);
+  const glowGeo=new THREE.TubeGeometry(curve,60,(radius||0.13)*3,8,false);
+  const glowMat=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.06,side:THREE.BackSide});
+  const glow=new THREE.Mesh(glowGeo,glowMat);scene.add(glow);
+  const arrows=[];
+  [0.15,0.35,0.55,0.75,0.92].forEach(u=>{
+    const p=curve.getPointAt(u),tg=curve.getTangentAt(u);
+    const arrow=makeArrowHead(p,tg,color,0.22);scene.add(arrow);arrows.push({mesh:arrow,u});
+  });
+  const nS=14,spheres=[];
+  for(let i=0;i<nS;i++){
+    const sg=new THREE.SphereGeometry(0.16,10,10);
+    const sm=new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.85});
+    const s=new THREE.Mesh(sg,sm);scene.add(s);spheres.push({mesh:s,offset:i/nS});
+  }
+  return{tube,glow,curve,spheres,arrows,color};
+}
+
+function clearTubes(){tubes.forEach(t=>{scene.remove(t.tube);scene.remove(t.glow);t.spheres.forEach(s=>scene.remove(s.mesh));t.arrows.forEach(a=>scene.remove(a.mesh))});tubes=[]}
+function bp(yP,z){return yP.map((y,i)=>new THREE.Vector3(lx(i),y,z))}
+
+let phase=0;
+const phases=[
+  {bn:[5,6,7,8],
+   sents:[{color:'#4a9eff',label:'IMPLICIT (REQUEST)',text:'"Can you pass the salt?"'},{color:'#ff4a6a',label:'LITERAL (ABILITY Q)',text:'"Can you lift this rock?"'}],
+   finding:{tag:'PART I',tagBg:'rgba(74,158,255,0.2)',tagColor:'#4a9eff',headline:'Layers 5–8 are the<br>pragmatic bottleneck',detail:'Identical until L5. Then the model splits requests from ability questions into separate pathways. L5 is the causal transition point.'},
+   build(){
+     tubes.push(makeTube(bp([0,0,0,0,.2,1,2,2.8,3.2,2.5,1.5,.8],-2),0x4a9eff,0.14));
+     tubes.push(makeTube(bp([0,0,0,0,-.2,-1,-2,-2.8,-3.2,-2.5,-1.5,-.8],2),0xff4a6a,0.14));
+   }},
+  {bn:[5,6,7,8,9,10],
+   sents:[{color:'#4a9eff',label:'ENGLISH',text:'"Can you pass the salt?"'},{color:'#50e89e',label:'CHINESE',text:'"你能把盐递给我吗?"'},{color:'#ff8c42',label:'CODE-SWITCH',text:'"你能 pass the salt 给我吗?"'}],
+   finding:{tag:'PART II',tagBg:'rgba(80,232,158,0.2)',tagColor:'#50e89e',headline:'More languages →<br>later bottleneck',detail:'English splits at L5. Chinese at L9. Code-switched at L10+. Language resolution consumes early layers, delaying pragmatic processing.'},
+   build(){
+     tubes.push(makeTube(bp([0,0,0,0,.3,1.5,2.8,3.2,3,2,1,.5],-3),0x4a9eff,0.12));
+     tubes.push(makeTube(bp([0,0,0,0,0,.2,.3,.5,1.5,2.8,3,2],0),0x50e89e,0.12));
+     tubes.push(makeTube(bp([0,0,0,0,0,0,.1,.2,.5,1.2,2.5,3.2],3),0xff8c42,0.12));
+   }},
+  {bn:[5,6,7,8],
+   sents:[{color:'#50e89e',label:'CORRECT CoT',text:'"...This is an indirect request."'},{color:'#ff8c42',label:'CORRUPTED CoT',text:'"...This is a literal question."'}],
+   finding:{tag:'PART III',tagBg:'rgba(255,140,66,0.2)',tagColor:'#ff8c42',headline:'Diverge → then<br>self-repair ↩',detail:'CoT causes real divergence at L5–L8, but downstream layers repair it. V-shape = self-repair. Zero shortcut circuits. L6H3 = faithful head.'},
+   build(){
+     tubes.push(makeTube(bp([0,0,0,0,.3,1.2,2.2,2.8,2.2,1,.3,.05],-2),0x50e89e,0.14));
+     tubes.push(makeTube(bp([0,0,0,0,-.3,-1.2,-2.2,-2.8,-2.2,-1,-.3,-.05],2),0xff8c42,0.14));
+   }}
+];
+
+function updateUI(){
+  const p=phases[phase];
+  document.getElementById('sents').innerHTML=p.sents.map(s=>`<div class="sent" style="border-color:${s.color}"><div class="label" style="color:${s.color}">${s.label}</div><div class="text">${s.text}</div></div>`).join('');
+  const f=p.finding;
+  document.getElementById('finding').innerHTML=`<div class="tag" style="background:${f.tagBg};color:${f.tagColor}">${f.tag}</div><div class="headline">${f.headline}</div><div class="detail">${f.detail}</div>`;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('on',i===phase));
+}
+
+function go(i){phase=i;clearTubes();phases[i].build();setBN(phases[i].bn);updateUI()}
+
+let isDrag=false, camTheta=0.3, camPhi=0.2, camDist=36;
+let tTheta=0.3, tPhi=0.2, lastMX=0, lastMY=0;
+
+ren.domElement.addEventListener('pointerdown',e=>{isDrag=true;lastMX=e.clientX;lastMY=e.clientY});
+addEventListener('pointerup',()=>isDrag=false);
+addEventListener('pointermove',e=>{
+  if(!isDrag)return;
+  tTheta-=(e.clientX-lastMX)*0.005;
+  tPhi=Math.max(-0.3,Math.min(1.2,tPhi-(e.clientY-lastMY)*0.005));
+  lastMX=e.clientX;lastMY=e.clientY;
+});
+
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+  if(!isDrag)tTheta+=0.002;
+  camTheta+=(tTheta-camTheta)*0.04;
+  camPhi+=(tPhi-camPhi)*0.04;
+  cam.position.x=Math.sin(camTheta)*Math.cos(camPhi)*camDist;
+  cam.position.y=Math.sin(camPhi)*camDist*0.35+2;
+  cam.position.z=Math.cos(camTheta)*Math.cos(camPhi)*camDist;
+  cam.lookAt(0,0,0);
+
+  tubes.forEach(tb=>{
+    tb.spheres.forEach(s=>{
+      const u=(t*0.1+s.offset)%1;
+      const pt=tb.curve.getPointAt(u);
+      s.mesh.position.copy(pt);
+      s.mesh.scale.setScalar(0.8+Math.sin(t*3+s.offset*20)*0.2);
+    });
+    tb.arrows.forEach(a=>{a.mesh.material.emissiveIntensity=0.3+Math.sin(t*2+a.u*10)*0.2});
+  });
+
+  causalGroup.children.forEach(c=>{
+    if(c.isLineSegments)c.material.opacity=0.3+Math.sin(t*1.8)*0.2;
+    if(c.isMesh&&c.geometry.type==='SphereGeometry')c.scale.setScalar(1+Math.sin(t*2)*0.2);
+  });
+
+  pt1.position.x=Math.sin(t*0.2)*15;
+  pt2.position.z=Math.cos(t*0.15)*15;
+  ren.render(scene,cam);
+}
+
+go(0);animate();
+addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();ren.setSize(innerWidth,innerHeight)});
+addEventListener('wheel',e=>{if(e.deltaY>30)go(Math.min(2,phase+1));else if(e.deltaY<-30)go(Math.max(0,phase-1))},{passive:true});
+</script>
+</body>
+</html>
